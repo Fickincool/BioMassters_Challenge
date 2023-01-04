@@ -85,9 +85,6 @@ class SentinelDataset(Dataset):
             sample = self.transform(sample)
 
         return sample
-
-
-#########################################################################################################
     
     def _read_tif_to_tensor(self, tif_path):
         X = tifffile.imread(tif_path).astype(np.float32)
@@ -112,12 +109,15 @@ class SentinelDataset(Dataset):
         
         assert len(x.shape)==3
         
-        Ms = x.flatten(1, 2).quantile(0.99, dim=1, keepdim=True).unsqueeze(-1)
+        Ms = x.flatten(1, 2).quantile(top_quantile, dim=1, keepdim=True).unsqueeze(-1)
         ms = torch.amin(x, dim=(1, 2), keepdim=True)
         scaled = (x-ms)/(Ms-ms)
         scaled = scaled.clamp(0,1)
+        scaled = scaled*600 # make data have the same range as output: (0, 583.80999756)
         
         return scaled
+
+#########################################################################################################
 
 
 class SentinelDataModule(pl.LightningDataModule):
