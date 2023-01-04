@@ -97,7 +97,7 @@ class S2_Unet_pytorch(nn.Module):
 class S2_Unet(pl.LightningModule):
     def __init__(self, loss_fn, lr, init_n_features, in_channels, dropout_p):
         """Expected input: [B, C, S, S] where B the batch size, C input channels and S the image length.
-        The data values are expected to be standardized and [0, 1] scaled.
+        The data values are expected to be Normalized.
         
         - p: dropout probability
         """
@@ -125,7 +125,6 @@ class S2_Unet(pl.LightningModule):
         self.out = nn.Sequential(
             self.conv2d_combo(init_n_features*2, init_n_features), 
             nn.Conv2d(init_n_features, 1, kernel_size=1, padding=0),
-            # nn.LeakyReLU(0.1)
             )
 
         return
@@ -134,6 +133,7 @@ class S2_Unet(pl.LightningModule):
         "Input tensor of shape [batch_size, channels, side, side]"
 
         ##### ENCODER #####
+        # print('Input: ', x.shape)
         e0 = self.EB0(x) # 1, channels_out = 64
         # print('E0: ', e0.shape)
         e1 = self.EB1(self.maxpool(e0)) # 1/2, channels_out = 128
@@ -203,23 +203,42 @@ class S2_Unet(pl.LightningModule):
             # },
         }
 
-    def training_step(self, batch):
+    def training_step(self, batch, batch_idx):
         image_s2, target = batch['image_s2'], batch['label']
         pred = self(image_s2)
         loss = self.loss_fn(pred, target)
 
         self.log(
-            "hp/train_loss",
-            loss,
+            "Train RMSE",
+            torch.round(torch.sqrt(loss), decimals=5),
             on_step=True,
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
         )
 
-        tensorboard = self.logger.experiment
-        tensorboard.add_histogram(
-            "AGBM distribution", pred.detach().cpu().numpy().flatten()
+        # tensorboard = self.logger.experiment
+        # tensorboard.add_histogram(
+        #     "Pred AGBM distribution", pred.detach().cpu().numpy().flatten()
+        # )
+        # tensorboard.add_histogram(
+        #     "AGBM distribution", target.detach().cpu().numpy().flatten()
+        # )
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        image_s2, target = batch['image_s2'], batch['label']
+        pred = self(image_s2)
+        loss = self.loss_fn(pred, target)
+
+        self.log(
+            "Val RMSE",
+            torch.round(torch.sqrt(loss), decimals=5),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
         )
 
         return loss

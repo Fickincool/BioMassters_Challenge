@@ -5,10 +5,11 @@ import pandas as pd
 import os
 import tifffile
 import numpy as np
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, random_split
 import torch
 from glob import glob
 import logging
+import pytorch_lightning as pl
 
 
 class SentinelDataset(Dataset):
@@ -119,8 +120,56 @@ class SentinelDataset(Dataset):
         return scaled
 
 
+class SentinelDataModule(pl.LightningDataModule):
+    def __init__(self, tiles_dir: str = "/home/ubuntu/Thesis/backup_data/bioMass_data/train_PCA_warm/",
+     target_dir:str = "/home/ubuntu/Thesis/backup_data/bioMass_data/train_agbm/", batch_size: int = 32,
+     max_chips = None, loader_device='cpu', num_workers=1):
+        super().__init__()
+        self.tiles_dir = tiles_dir
+        self.target_dir = target_dir
+        self.batch_size = batch_size
+        self.max_chips = max_chips
+        self.loader_device = loader_device
+        self.num_workers = num_workers
+   
 
+    def setup(self, stage: str):
+        self.dataset = SentinelDataset(
+            dir_tiles=self.tiles_dir, dir_target=self.target_dir, 
+            max_chips=self.max_chips, transform=None, device=self.loader_device
+            )
 
+        self.train_dataset, self.val_dataset, self.test_dataset = random_split(self.dataset, [0.7, 0.2, 0.1])
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            pin_memory=True
+            )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True
+            )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True
+            )
+
+    # def predict_dataloader(self):
+    #     return DataLoader(self.mnist_predict, batch_size=self.batch_size)
 
 
 
