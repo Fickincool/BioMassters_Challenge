@@ -8,13 +8,24 @@ import torch
 from sklearn.decomposition import PCA
 import logging
 
-from joblib import Parallel, delayed
-
 from skimage import io
 
-from bioMass.dataloader import train_df, read_yearly_tiffs
+from bioMass.dataloader import train_df, test_df, read_yearly_tiffs
 
-logfile = '/home/ubuntu/Thesis/backup_data/bioMass_data/train_PCA_warm/log.txt'
+from argparse import ArgumentParser
+
+logfile_train = '/home/ubuntu/Thesis/backup_data/bioMass_data/train_PCA_warm/log.txt'
+logfile_test = '/home/ubuntu/Thesis/backup_data/bioMass_data/test_PCA_warm/log.txt'
+
+
+IS_TRAIN = False
+
+if IS_TRAIN:
+    logfile = logfile_train
+    df = train_df
+else:
+    logfile = logfile_test
+    df = test_df
 
 logging.basicConfig(filename=logfile, level=logging.DEBUG, format="%(asctime)s %(message)s", filemode="a")
 
@@ -71,8 +82,11 @@ def PCA_by_band(data, band_no, n_components=1):
 
     return reduced_single_band    
 
-def compute_PCA_data(chipid, satellite):
-    output_folder = '/home/ubuntu/Thesis/backup_data/bioMass_data/train_PCA_warm/'
+def compute_PCA_data(chipid, satellite, is_train=True):
+    if is_train:
+        output_folder = '/home/ubuntu/Thesis/backup_data/bioMass_data/train_PCA_warm/'
+    else:
+        output_folder = '/home/ubuntu/Thesis/backup_data/bioMass_data/test_PCA_warm/'
     output_filename = '%s_%s.tif' %(chipid, satellite)
     output_filename = os.path.join(output_folder, output_filename)
     
@@ -84,7 +98,7 @@ def compute_PCA_data(chipid, satellite):
     if not os.path.exists(output_filename):
     # if True:
 
-        data, months_list, agbm = read_yearly_tiffs(chipid, satellite)  
+        data, months_list, agbm = read_yearly_tiffs(chipid, satellite, is_train=IS_TRAIN)  
         data, months_list = get_warm_data(data, months_list)
 
         logging.info('Chip ID: %s, Satellite: %s, # Warm months: %i' %(chipid, satellite, len(months_list)))
@@ -104,5 +118,5 @@ def compute_PCA_data(chipid, satellite):
     return
 
 for satellite in ['S2', 'S1']: 
-    for chipid in tqdm(train_df.chip_id.unique()):
-        compute_PCA_data(chipid=chipid, satellite=satellite)
+    for chipid in tqdm(df.chip_id.unique()):
+        compute_PCA_data(chipid=chipid, satellite=satellite, is_train=IS_TRAIN)

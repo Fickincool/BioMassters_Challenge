@@ -1,5 +1,4 @@
 from skimage import io
-import numpy as np
 from joblib import Parallel, delayed
 import pandas as pd
 import os
@@ -10,6 +9,7 @@ import torch
 from glob import glob
 import logging
 import pytorch_lightning as pl
+from bioMass.moran_Dataloader import MoranSentinelDataset
 
 
 class SentinelDataset(Dataset):
@@ -114,6 +114,9 @@ class SentinelDataset(Dataset):
         scaled = (x-ms)/(Ms-ms)
         scaled = scaled.clamp(0,1)
         scaled = scaled*600 # make data have the same range as output: (0, 583.80999756)
+
+        # replace nans with -1
+        scaled = scaled.nan_to_num_(-1)
         
         return scaled
 
@@ -121,25 +124,50 @@ class SentinelDataset(Dataset):
 
 
 class SentinelDataModule(pl.LightningDataModule):
-    def __init__(self, tiles_dir: str = "/home/ubuntu/Thesis/backup_data/bioMass_data/train_PCA_warm/",
-     target_dir:str = "/home/ubuntu/Thesis/backup_data/bioMass_data/train_agbm/", batch_size: int = 32,
-     max_chips = None, loader_device='cpu', num_workers=1):
+    def __init__(self, loader_type, is_train, batch_size: int = 32,
+     max_chips = None, loader_device='cpu', num_workers=1, split_proportions = [0.7, 0.2, 0.1]):
         super().__init__()
-        self.tiles_dir = tiles_dir
-        self.target_dir = target_dir
+        if is_train:
+            data_type = 'train'
+            self.target_dir = "/home/ubuntu/Thesis/backup_data/bioMass_data/train_agbm/"
+        else:
+            data_type = 'test'
+            self.target_dir = None
+            print('Test type specified, overriding split proportions to [0, 0, 1]')
+            split_proportions = [0, 0, 1]
+
+        if loader_type=='PCA':
+            self.tiles_dir = "/home/ubuntu/Thesis/backup_data/bioMass_data/%s_PCA_warm/" %data_type
+        elif loader_type=='Moran':
+            self.tiles_dir = "/home/ubuntu/Thesis/backup_data/bioMass_data/%s_features/" %data_type
+        else:
+            raise ValueError('Invalid loader type')
+        self.loader_type = loader_type
         self.batch_size = batch_size
         self.max_chips = max_chips
         self.loader_device = loader_device
         self.num_workers = num_workers
+        assert np.round(np.sum(split_proportions))==1
+        self.split_proportions = split_proportions
    
 
     def setup(self, stage: str):
-        self.dataset = SentinelDataset(
-            dir_tiles=self.tiles_dir, dir_target=self.target_dir, 
-            max_chips=self.max_chips, transform=None, device=self.loader_device
-            )
+        torch.manual_seed(0)
+        if self.loader_type=='PCA':
+            self.dataset = SentinelDataset(
+                dir_tiles=self.tiles_dir, dir_target=self.target_dir, 
+                max_chips=self.max_chips, transform=None, device=self.loader_device
+                )
 
-        self.train_dataset, self.val_dataset, self.test_dataset = random_split(self.dataset, [0.7, 0.2, 0.1])
+        elif self.loader_type=='Moran':
+            tile_file = '/home/ubuntu/Thesis/backup_data/bioMass_data/TILE_LIST_BEST_MONTHS.csv'
+            self.dataset = MoranSentinelDataset(
+                tile_file,
+                dir_tiles=self.tiles_dir, dir_target=self.target_dir, 
+                max_chips=self.max_chips, transform=None, device=self.loader_device
+                )
+
+        self.train_dataset, self.val_dataset, self.test_dataset = random_split(self.dataset, self.split_proportions)
 
     def train_dataloader(self):
         return DataLoader(
@@ -168,9 +196,6 @@ class SentinelDataModule(pl.LightningDataModule):
             pin_memory=True
             )
 
-    # def predict_dataloader(self):
-    #     return DataLoader(self.mnist_predict, batch_size=self.batch_size)
-
 
 
 
@@ -180,6 +205,9 @@ data_folder = '/home/ubuntu/Thesis/backup_data/bioMass_data/'
 f = os.path.join(data_folder, 'features_metadata.csv')
 train_df = pd.read_csv(f)
 train_df = train_df[train_df.split=='train']
+
+test_df = pd.read_csv(f)
+test_df = test_df[test_df.split=='test']
 
 def read_and_process_tif(filename):
     data = tifffile.imread(filename)
@@ -200,18 +228,28 @@ def read_and_process_tif(filename):
     
     return data
 
-def read_yearly_tiffs(chip_id, satellite):
+def read_yearly_tiffs(chip_id, satellite, is_train=True):
     
-    chip_df = train_df[(train_df.chip_id==chip_id) & (train_df.satellite==satellite)]
+    if is_train:
+        folder = 'train_features/'
+        df = train_df
+    else:
+        folder = 'test_features/'
+        df = test_df
 
-    files_list = chip_df.filename.map(lambda x: os.path.join(data_folder, 'train_features/'+x)).values
+    chip_df = df[(df.chip_id==chip_id) & (df.satellite==satellite)]
+
+    files_list = chip_df.filename.map(lambda x: os.path.join(data_folder, folder+x)).values
 
     months_list = chip_df.filename.map(lambda x: int(x.split('_')[-1].replace('.tif', ''))).values    
 
     data = Parallel(len(files_list))(delayed(read_and_process_tif)(filename) for filename in files_list)
 
-    agbm_data = chip_df.corresponding_agbm.map(lambda x: os.path.join(data_folder, 'train_agbm/'+x)).unique()
-    assert len(agbm_data)==1
-    agbm_data = io.imread(agbm_data[0])
+    if is_train:
+        agbm_data = chip_df.corresponding_agbm.map(lambda x: os.path.join(data_folder, 'train_agbm/'+x)).unique()
+        assert len(agbm_data)==1
+        agbm_data = io.imread(agbm_data[0])
+    else:
+        agbm_data = None
 
     return data, months_list, agbm_data

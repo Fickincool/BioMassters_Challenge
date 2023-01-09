@@ -125,20 +125,20 @@ class Unet(_Unet):
 
         return {
             "optimizer": optimizer,
-            # "lr_scheduler": {
-            #     "scheduler": ReduceLROnPlateau(
-            #         optimizer,
-            #         "min",
-            #         verbose=True,
-            #         patience=10,
-            #         min_lr=1e-8,
-            #         factor=factor,
-            #     ),
-            #     "monitor": "hp/val_loss_epoch",
-            #     "frequency": 1
-            #     # If "monitor" references validation metrics, then "frequency" should be set to a
-            #     # multiple of "trainer.check_val_every_n_epoch".
-            # },
+            "lr_scheduler": {
+                "scheduler": ReduceLROnPlateau(
+                    optimizer,
+                    "min",
+                    verbose=True,
+                    patience=10,
+                    min_lr=1e-8,
+                    factor=factor,
+                ),
+                "monitor": "Val RMSE",
+                "frequency": 1
+                # If "monitor" references validation metrics, then "frequency" should be set to a
+                # multiple of "trainer.check_val_every_n_epoch".
+            },
         }
 
     def training_step(self, batch, batch_idx):
@@ -238,20 +238,20 @@ class DoubleStreamUnet(_DoubleStreamUnet):
 
         return {
             "optimizer": optimizer,
-            # "lr_scheduler": {
-            #     "scheduler": ReduceLROnPlateau(
-            #         optimizer,
-            #         "min",
-            #         verbose=True,
-            #         patience=10,
-            #         min_lr=1e-8,
-            #         factor=factor,
-            #     ),
-            #     "monitor": "hp/val_loss_epoch",
-            #     "frequency": 1
-            #     # If "monitor" references validation metrics, then "frequency" should be set to a
-            #     # multiple of "trainer.check_val_every_n_epoch".
-            # },
+            "lr_scheduler": {
+                "scheduler": ReduceLROnPlateau(
+                    optimizer,
+                    "min",
+                    verbose=True,
+                    patience=10,
+                    min_lr=1e-8,
+                    factor=factor,
+                ),
+                "monitor": "Val RMSE",
+                "frequency": 1
+                # If "monitor" references validation metrics, then "frequency" should be set to a
+                # multiple of "trainer.check_val_every_n_epoch".
+            },
         }
 
     def training_step(self, batch, batch_idx):
