@@ -41,7 +41,7 @@ dm_params = {
     }
 
 def main(args):
-    for loader_type in ['PCA', 'Moran']:
+    for loader_type in ['Moran']:
   
         logger = pl_loggers.TensorBoardLogger(
             parse_logdir(loader_type), name="", default_hp_metric=False
@@ -67,6 +67,7 @@ def main(args):
 
         loss_module = nn.MSELoss(reduction='mean')
 
+        dm_params['loader_type'] = loader_type
         dm = SentinelDataModule(**dm_params)
 
         # dont use dropout if we are trying to overfit

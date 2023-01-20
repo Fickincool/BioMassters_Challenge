@@ -5,6 +5,9 @@ import pytorch_lightning as pl
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 
+from bioMass.backbones import utae, unet3d, convlstm, convgru, fpn, ltae
+
+
 # This is just a copy from the original implementation in:
 # https://github.com/NVIDIA/partialconv/tree/master/models
 from bioMass.partialConv2D import PartialConv2d
@@ -216,6 +219,7 @@ class _DoubleStreamUnet(pl.LightningModule):
         return out
 
 class DoubleStreamUnet(_DoubleStreamUnet):
+    
     def __init__(self, loss_fn, lr, dropout_p):
         """Expected input: [B, C, S, S] where B the batch size, C input channels and S the image length.
         The data values are expected to be Normalized.
@@ -276,6 +280,112 @@ class DoubleStreamUnet(_DoubleStreamUnet):
         image_s1, image_s2, target = batch['image_s1'], batch['image_s2'], batch['label']
 
         pred = self(image_s1, image_s2)
+        loss = self.loss_fn(pred, target)
+
+        self.log(
+            "Val RMSE",
+            torch.round(torch.sqrt(loss), decimals=5),
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+
+        return loss
+
+
+class _Utae(pl.LightningModule):
+    """
+    U-net with Temporal Attenuation Encoder as in https://github.com/VSainteuf/utae-paps/tree/main
+    """
+    def __init__(self, input_dim):
+        """Expected input: [B, T, C, S, S] where B the batch size, C input channels and S the image length.
+        The data values are expected to be standardized and [0, 1] scaled.
+        
+        - p: dropout probability
+        """
+
+        super().__init__()
+        self.utae = utae.UTAE(input_dim, out_conv=[32, 1])
+
+        return
+
+    def forward(self, image_s1, image_s2, batch_positions):
+        
+        x = torch.concat([image_s1, image_s2], axis=2)
+        # batch positions are fixed to the assumed yearly availability
+        out = self.utae(x, batch_positions=batch_positions)
+
+        return out
+
+
+class Utae(_Utae):
+    """
+    U-net with Temporal Attenuation Encoder as in https://github.com/VSainteuf/utae-paps/tree/main
+    """
+    def __init__(self, loss_fn, lr, input_dim):
+        """Expected input: [B, T, C, S, S] where B the batch size, C input channels and S the image length.
+        The data values are expected to be standardized and [0, 1] scaled.
+        
+        - p: dropout probability
+        """
+
+        super().__init__(input_dim)
+        self.lr = lr
+        self.loss_fn = loss_fn
+
+        self.save_hyperparameters()
+
+        return
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-8
+        )
+        factor = 0.1
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": ReduceLROnPlateau(
+                    optimizer,
+                    "min",
+                    verbose=True,
+                    patience=10,
+                    min_lr=1e-8,
+                    factor=factor,
+                ),
+                "monitor": "Val RMSE",
+                "frequency": 1
+                # If "monitor" references validation metrics, then "frequency" should be set to a
+                # multiple of "trainer.check_val_every_n_epoch".
+            },
+        }
+
+    def training_step(self, batch, batch_idx):
+        image_s1, image_s2, target = batch['image_s1'], batch['image_s2'], batch['target']
+        batch_positions = torch.Tensor(range(12)).repeat(len(target)).reshape(len(target), 12)
+
+        pred = self(image_s1, image_s2, batch_positions.to('cuda'))
+        loss = self.loss_fn(pred, target)
+
+        self.log(
+            "Train RMSE",
+            torch.round(torch.sqrt(loss), decimals=5),
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+
+        image_s1, image_s2, target = batch['image_s1'], batch['image_s2'], batch['target']
+        batch_positions = torch.Tensor(range(12)).repeat(len(target)).reshape(len(target), 12)
+
+        pred = self(image_s1, image_s2, batch_positions.to('cuda'))
         loss = self.loss_fn(pred, target)
 
         self.log(

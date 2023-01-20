@@ -127,6 +127,7 @@ class SentinelDataModule(pl.LightningDataModule):
     def __init__(self, loader_type, is_train, batch_size: int = 32,
      max_chips = None, loader_device='cpu', num_workers=1, split_proportions = [0.7, 0.2, 0.1]):
         super().__init__()
+        self.is_train = is_train
         if is_train:
             data_type = 'train'
             self.target_dir = "/home/ubuntu/Thesis/backup_data/bioMass_data/train_agbm/"
@@ -160,7 +161,10 @@ class SentinelDataModule(pl.LightningDataModule):
                 )
 
         elif self.loader_type=='Moran':
-            tile_file = '/home/ubuntu/Thesis/backup_data/bioMass_data/TILE_LIST_BEST_MONTHS.csv'
+            if self.is_train:
+                tile_file = '/home/ubuntu/Thesis/backup_data/bioMass_data/TILE_LIST_BEST_MONTHS.csv'
+            else:
+                tile_file = '/home/ubuntu/Thesis/backup_data/bioMass_data/TILE_LIST_BEST_MONTHS_TEST.csv'
             self.dataset = MoranSentinelDataset(
                 tile_file,
                 dir_tiles=self.tiles_dir, dir_target=self.target_dir, 
